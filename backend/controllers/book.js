@@ -40,49 +40,64 @@ exports.getOneBook = (req, res, next) => {
 };
 
 //modification d'un livre
-exports.modifyBook = (req, res, next) => {
-    const bookObject = req.file
-        ? {
-            ...JSON.parse(req.body.book),
-            imageUrl: `${req.protocol}://${req.get("host")}/images/${req.file.filename}`,
-        }
-        : { ...req.body };
+exports.modifyBook = async (req, res) => {
+    //récupération des données
+    let bookObject = req.file ? {
+        ...JSON.parse(req.body.book),
+        imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
+    } : { ...req.body };
 
     delete bookObject._userId;
 
-    // Récupération du livre existant à modifier
-    Book.findOne({ _id: req.params.id })
-        .then((book) => {
-            if (book.userId != req.auth.userId) { // Vérifie que c'est le bon utilisateur
-                return res.status(403).json({ message: '403: unauthorized request' });
+    try {
+        const book = await Book.findOne({ _id: req.params.id });
+
+        if (book.userId != req.auth.userId) { //vérification des droits
+
+            // Changement au code 403
+            return res.status(403).json({ message: "Non autorisé" });
+        }
+
+        //nouvelle image, après modification du livre
+        if (req.file) {
+
+
+            const filename = book.imageUrl.split('/images/')[1];
+
+            fs.unlink(`images/${filename}`, async (error) => {  // Suppression de l'ancienne image
+
+                if (error) {
+                    return res.status(500).json({ error: "Erreur lors de la suppression de l'image" });
+                }
+                console.log(`L'ancienne image ${filename} a été supprimée avec succès.`);
+
+                bookObject.imageUrl = `${req.protocol}://${req.get("host")}/images/${req.file.filename}`; //mise à jour du livre
+
+                try {
+                    await Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
+
+                    return res.status(200).json({ message: "Livre modifié" });
+                }
+                catch (error) {
+                    return res.status(500).json({ error });
+                }
+            });
+        }
+
+        else {
+            try {
+                await Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id });
+
+                return res.status(200).json({ message: "Livre modifié" });
             }
-
-            // Si une nouvelle image a été téléchargée, on supprime l'ancienne
-            if (req.file) {
-                const filename = book.imageUrl.split('/images/')[1];
-                const filePath = path.join(__dirname, '../images', filename);
-
-                console.log("Tentative de suppression de l'ancienne image à : ", filePath); // Debugging
-
-                // Vérifie si le fichier existe avant de le supprimer
-                fs.unlink(filePath, (err) => {
-                    if (err) {
-                        console.error('Erreur lors de la suppression de l\'ancienne image:', err);
-                        return res.status(500).json({ error: 'Erreur lors de la suppression de l\'ancienne image' });
-                    } else {
-                        console.log('Ancienne image supprimée avec succès.');
-                    }
-                });
+            catch (error) {
+                return res.status(500).json({ error });
             }
-
-            // Mise à jour du livre avec la nouvelle image ou sans image si non modifiée
-            Book.updateOne({ _id: req.params.id }, { ...bookObject, _id: req.params.id })
-                .then(() => res.status(200).json({ message: 'Objet modifié !' }))
-                .catch((error) => res.status(400).json({ error }));
-        })
-        .catch((error) => {
-            res.status(404).json({ error });
-        });
+        }
+    }
+    catch (error) {
+        return res.status(400).json({ error });
+    }
 };
 
 //suppression d'un livre

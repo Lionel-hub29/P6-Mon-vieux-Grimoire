@@ -3,9 +3,31 @@ const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 
-// Configuration Multer : stockage en mémoire pour traitement
+
+const MIME_TYPES = {
+    'image/jpg': 'webp',
+    'image/jpeg': 'webp',
+    'image/webp': 'webp',
+    'image/png': 'webp'
+};
+
+
+const fileFilter = (req, file, cb) => {
+    if (MIME_TYPES[file.mimetype]) {
+        cb(null, true); // Accepter le fichier
+    } else {
+        cb(new Error("Type de fichier non autorisé. Formats acceptés : jpg, jpeg, png, webp"), false);
+    }
+};
+
+// Configuration Multer : stockage en mémoire pour traitement avec limitation et filtre
 const storage = multer.memoryStorage();
-const upload = multer({ storage }).single("image");
+const upload = multer({
+    storage,
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2 Mo max
+    fileFilter //regarde le type
+}).single("image");
+
 
 // Middleware de conversion en WebP
 const convertImage = async (req, res, next) => {
@@ -21,7 +43,7 @@ const convertImage = async (req, res, next) => {
 
         // Conversion en WebP et enregistrement
         await sharp(req.file.buffer)
-            .resize(206, 260, { fit: "cover" }) // Taille fixe
+            .resize(206, 260, { fit: "contain" }) // Taille fixe - image ajustée
             .toFormat("webp", { quality: 80 }) // Conversion en WebP
             .toFile(outputPath);
 
